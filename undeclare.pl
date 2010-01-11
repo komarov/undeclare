@@ -5,7 +5,7 @@
 # Motivation: http://www.mail-archive.com/moose@perl.org/msg01220.html
 #
 # Authors and contributors: Komarov Oleg, Kim Vladimir
-# Last update: 2010-01-06
+# Last update: 2010-01-11
 
 use strict;
 use warnings;
@@ -13,6 +13,7 @@ use warnings;
 use PPI;
 use PPI::Find;
 use List::Util qw( max );
+use Parse::Method::Signatures;
 
 my $Input = join( '', <> );
 my $Doc = PPI::Document->new( \$Input );
@@ -27,28 +28,55 @@ if( ref( $Methods ) eq 'ARRAY' ) {
       if( $AfterMethodName->isa( 'PPI::Structure::List' ) ) {
       # method has a signature
          $CodeBlock = $AfterMethodName->snext_sibling();
-         my $Signature = $AfterMethodName->remove()->content();
-         $Signature =~ s/^\(//;
-         $Signature =~ s/\)$//;
-         if( $Signature =~ s{^\s*\w*\s* (\$\w+): }{}xms ) {
-         # explicit method invocant is specified
-            $InsertBlock .= "my $1 = shift;\n";
+
+         my $SignatureToken = $AfterMethodName->remove();
+         my $Signature      = Parse::Method::Signatures->signature( $SignatureToken->content() );
+         my @Lexicals = ();
+         push @Lexicals, $Signature->has_invocant ? $Signature->invocant->variable_name : '$self';
+
+         my %DefaultValues = ();
+         if( $Signature->has_positional_params ) {
+            push @Lexicals, map { $_->variable_name } $Signature->positional_params;
+            foreach my $Param ( grep { $_->has_default_value } $Signature->positional_params ) {
+               $DefaultValues{ $Param->variable_name } = $Param->default_value;
+            }
          }
-         else {
-            $InsertBlock .= "my \$self = shift;\n";
+         my $NamedParametersBlock = '';
+         if( $Signature->has_named_params ) {
+            my $MaxVariableNameLength = max( map { length( $_->variable_name ) } $Signature->named_params );
+            push @Lexicals, '%__named_params';
+            $NamedParametersBlock = join( 
+               '', 
+               map { 
+                  "my " . $_->variable_name . ( ' ' x ( $MaxVariableNameLength - length( $_->variable_name ) ) ) 
+                  . " = \$__named_params{ '" . $_->label . "' };\n" 
+               } $Signature->named_params 
+            );
+            foreach my $Param ( grep { $_->has_default_value } $Signature->named_params ) {
+               $DefaultValues{ $Param->variable_name } = $Param->default_value;
+            }
          }
-         my $ParametersAreNamed = ( $Signature =~ /:\$/ );
-         if( $ParametersAreNamed ) {
-            $InsertBlock .= parseNamedParameters( $Signature );
+
+         my $Vars = join q{,}, @Lexicals;
+         $InsertBlock .= "my (${Vars}) = \@_;\n";
+
+         my $DefaultValuesBlock = '';
+         foreach my $VariableName ( keys %DefaultValues ) {
+            $DefaultValuesBlock .= "$VariableName = $DefaultValues{ $VariableName } if !defined $VariableName;\n"; 
+            # //= operator is not always available
+            # otherwise it would be 
+            # $DefaultValuesBlock .= "$VariableName //= $DefaultValues{ $VariableName };\n"; 
          }
-         else {
-            $InsertBlock .= parsePositionedParameters( $Signature );
-         }
+         $DefaultValuesBlock = "# Default values\n$DefaultValuesBlock" if $DefaultValuesBlock;
+
+         $InsertBlock .= $NamedParametersBlock;        
+         $InsertBlock .= $DefaultValuesBlock;
+
       }
       elsif( $AfterMethodName->isa( 'PPI::Structure::Block' ) ) {
       # method doesn't have a signature
          $CodeBlock = $AfterMethodName;
-         $InsertBlock .= 'my $self = shift;' . "\n";
+         $InsertBlock .= "my \$self = shift;\n";
       }
 
       # try to find whitespace inside the method to indent our generated code
@@ -66,39 +94,7 @@ if( ref( $Methods ) eq 'ARRAY' ) {
    }
 }
 print $Doc->serialize();
-
-
-#-------------------------------------------------------------------------------
-sub parsePositionedParameters {
-   my $ArgStr = shift;
-
-   my @ParsedArgs;
-   foreach my $Arg ( split /,/, $ArgStr ) {
-      $Arg =~ s{.*?(\$\w+).*}{$1};
-      push @ParsedArgs, $Arg;
-   }
-
-   return 'my ( ' . join( ', ', @ParsedArgs ) . ' ) = @_;' . "\n";
-}
-
-
-#-------------------------------------------------------------------------------
-sub parseNamedParameters {
-   my $ArgStr = shift;
-
-   my $Output = "my \%__params = \@_;\n";
-   my @ArgNames = split /,/, $ArgStr;
-   foreach my $ArgName ( @ArgNames ) {
-      $ArgName =~ s{.*?\$(\w+).*}{$1};
-   }
-   my $MaxNameLength = max( map { length( $_ ) } @ArgNames );
-   foreach my $ArgName ( @ArgNames ) {
-      my $AlignIndent = $MaxNameLength - length( $ArgName );
-      $Output .= "my \$$ArgName" . ( ' ' x $AlignIndent ) . " = \$__params{ '$ArgName' };\n";
-   }
-
-   return $Output;
-}
+exit;
 
 
 #-------------------------------------------------------------------------------
