@@ -1,0 +1,39 @@
+A simple tool for translating MooseX::Method::Signatures syntax sugar
+into native subs and parameters parsing
+
+Motivation: http://www.mail-archive.com/moose@perl.org/msg01220.html
+
+Undeclare.pm contains two functions: undeclare, undeclareFile (see POD).
+
+undeclare.pl is a simple interface util for this package:
+ - you can use it to read from STDIN and write to STDOUT;
+ - you can provide one or two filenames as arguments for 
+input and output correspondingly, provided only one argument 
+undeclare.pl will rewrite the input file.
+
+
+We use Undeclare.pm in our build script and it looks somehow like this;
+
+
+#!/usr/bin/perl
+use strict;
+use warnings;
+
+use File::Find;
+use lib $FindBin::Bin;
+use Undeclare;
+
+my $SourceDir  = 'Path to your codebase';
+my $ReleaseDir = 'Where to put undeclared code';
+
+mkdir $ReleaseDir unless -d $ReleaseDir;
+`rm -r $ReleaseDir/*`;
+`cp -r $SourceDir $ReleaseDir`;
+
+find( 
+   sub { 
+      /\.pm$/ && Undeclare::undeclareFile( $_ ); 
+      print "$File::Find::name was undeclared\n"; 
+   }, 
+   $ReleaseDir 
+);
