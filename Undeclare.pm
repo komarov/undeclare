@@ -63,10 +63,11 @@ sub _undeclareMethod {
    $MethodToken->set_content( 'sub' );
 
    my ( $CodeBlock, $SignatureToken ) = _findParts( $MethodToken );
+
    my $InsertBlock = "\n";
    if( $SignatureToken ) {
       $InsertBlock .= _processSignature( $SignatureToken );
-      $SignatureToken->remove();
+      $SignatureToken->remove(); 
    }
    else {
       $InsertBlock .= "my \$self = shift;\n";
@@ -83,7 +84,6 @@ sub _undeclareMethod {
    # indent generated code by found indent level
       $InsertBlock = _prefix( $InsertBlock, $FoundIndent );
    }
-
    $CodeBlock->first_token()->add_content( $InsertBlock );
 
    return;
@@ -96,13 +96,22 @@ sub _findParts {
 
    my ( $CodeBlock, $SignatureToken ) = ();
    my $MethodName = $MethodToken->snext_sibling();
-   my $Sibling = $MethodName->snext_sibling();
-   while( !$Sibling->isa( 'PPI::Structure::Block' ) ) {
-   # Such block is an actual code block
-      if( $Sibling->isa( 'PPI::Structure::List' ) ) {
-         $SignatureToken = $Sibling;
-      }
-      $Sibling = $Sibling->snext_sibling();
+   my $Sibling;
+   if ( $MethodName =~ /^\{/ ){
+     $Sibling = $MethodName;
+   }else{
+     $Sibling = $MethodName->snext_sibling() // undef;
+   }
+
+   if ( defined $Sibling ){
+     while( $Sibling && ! $Sibling->isa( 'PPI::Structure::Block' ) ) {
+        # Such block is an actual code block
+       
+           if( $Sibling->isa( 'PPI::Structure::List' ) ) {
+              $SignatureToken = $Sibling;
+           }
+           $Sibling = $Sibling->snext_sibling();
+     }
    }
    $CodeBlock = $Sibling;
 
