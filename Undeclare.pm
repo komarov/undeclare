@@ -100,7 +100,7 @@ sub _findParts {
    if ( $MethodName =~ /^\{/ ){
      $Sibling = $MethodName;
    }else{
-     $Sibling = $MethodName->snext_sibling() // undef;
+     $Sibling = $MethodName->snext_sibling();
    }
 
    if ( defined $Sibling ){
@@ -200,7 +200,9 @@ Rewrites file in-place if only one argument is provided.
 
 =head1 AUTHORS AND CONTRIBUTORS
 
-Oleg Komarov, Vladimir Kim
+Oleg Komarov
+Vladimir Kim
+Andreas Hernitscheck
 
 =head1 LICENSE
 
